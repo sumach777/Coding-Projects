@@ -1,0 +1,1 @@
+Collaborated with 3 other classmates to analyze data that recorded events where stormwater drainage overflowed to find key predictors. Performed exploratory data analysis, fitted initial Poisson and Negative Binomial regression training models, used stepwise selection to find best performing model, and evaluated models on test data. 
