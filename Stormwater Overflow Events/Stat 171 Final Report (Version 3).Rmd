@@ -1,0 +1,414 @@
+---
+title: "Stat 171 Final Report"
+author: "Sumedha Chalasani, Swaraj Dash, Megan Nakajima, Rhea Verma"
+date: "2026-03-15"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r, include=FALSE}
+# loading necessary libraries
+library(tidyverse)
+library(MASS)      
+library(car)       
+library(lmtest)
+library(GGally)
+library(aod)
+```
+
+**Data Cleaning**
+
+```{r}
+# raw data
+df <- read.csv("Stormwater_overflow_events.csv")
+
+# data cleaning
+df <- df %>%
+  drop_na() %>%
+  distinct()
+
+df <- df %>% 
+  dplyr::select(overflow_events, rain_mm, impervious_pct, combined_sewer, maintenance_overdue, upstream_construction, catchment_type, green_infra_index)
+```
+
+# Exploratory Data Analysis (EDA)
+
+**Summary Statistics of Response Variable:**
+
+```{r, echo=FALSE}
+cat("Range:", range(df$overflow_events))
+cat("\nMean:", mean(df$overflow_events))
+cat("\nVariance:", var(df$overflow_events))
+```
+
+**Distribution:** The response variable is count data, meaning a Poisson distribution would be a good fit. However, there is overdispersion present in the response variable, so it actually follows the Negative Binomial distribution. There are no rows of data with repeated or missing data, but rain_c was taken out as rain_mm was preferred as a more interpretable predictor.
+
+```{r}
+# descriptive statistics for overflow_events 
+df %>%
+  summarise(
+    Mean = mean(df$overflow_events), 
+    SD = sd(df$overflow_events),
+    Median = median(df$overflow_events),
+    IQR = IQR(df$overflow_events),
+    Min = min(df$overflow_events), 
+    Max = max(df$overflow_events),
+    Variance = var(df$overflow_events)
+  )
+
+```
+
+```{r}
+# descriptive statistics for rain_mm
+df %>%
+  summarise(
+    Mean = mean(df$rain_mm), 
+    SD = sd(df$rain_mm),
+    Median = median(df$rain_mm),
+    IQR = IQR(df$rain_mm),
+    Min = min(df$rain_mm), 
+    Max = max(df$rain_mm),
+    Variance = var(df$rain_mm)
+  )
+```
+
+```{r}
+# descriptive statistics for impervious_pct
+df %>%
+  summarise(
+    Mean = mean(df$impervious_pct), 
+    SD = sd(df$impervious_pct),
+    Median = median(df$impervious_pct),
+    IQR = IQR(df$impervious_pct),
+    Min = min(df$impervious_pct), 
+    Max = max(df$impervious_pct),
+    Variance = var(df$impervious_pct)
+  )
+```
+
+```{r}
+# descriptive statistics for green_infra_index
+df %>%
+  summarise(
+    Mean = mean(df$green_infra_index), 
+    SD = sd(df$green_infra_index),
+    Median = median(df$green_infra_index),
+    IQR = IQR(df$green_infra_index),
+    Min = min(df$green_infra_index), 
+    Max = max(df$green_infra_index),
+    Variance = var(df$green_infra_index)
+  )
+```
+
+```{r}
+# descriptive statistics for combined_sewer
+
+prop.table(table(df$combined_sewer))
+```
+
+```{r}
+# descriptive statistics for maintenance_overdue
+
+prop.table(table(df$maintenance_overdue))
+```
+
+```{r}
+# descriptive statistics for upstream_construction
+
+prop.table(table(df$upstream_construction))
+```
+
+```{r}
+# descriptive statistics for catchment_types
+
+prop.table(table(df$catchment_type))
+```
+
+```{r}
+# find mean overflow for binary variables 
+
+df %>%
+  group_by(combined_sewer) %>%
+  summarise(mean_overflow = mean(overflow_events),
+            sd_overflow = sd(overflow_events),
+            n = n())
+
+df %>%
+  group_by(maintenance_overdue) %>%
+  summarise(mean_overflow = mean(overflow_events),
+            sd_overflow = sd(overflow_events),
+            n = n())
+
+df %>%
+  group_by(catchment_type) %>%
+  summarise(mean_overflow = mean(overflow_events),
+            sd_overflow = sd(overflow_events),
+            n = n())
+```
+
+```{r}
+# check correlations between numeric variables and overflow_events 
+
+cor(df$overflow_events, df$rain_mm)
+cor(df$overflow_events, df$impervious_pct)
+cor(df$overflow_events, df$green_infra_index)
+```
+
+```{r}
+model <- glm.nb(overflow_events ~ rain_mm + impervious_pct + green_infra_index + combined_sewer + maintenance_overdue + upstream_construction + catchment_type, 
+      data = df) 
+
+summary(model)
+```
+
+```{r}
+# check for multicollinearity
+vif(model)
+```
+
+```{r}
+numeric_variables <- df[, c("overflow_events", "rain_mm", "impervious_pct", "green_infra_index")]
+
+ggpairs(numeric_variables)
+```
+
+**Significant predictors:**
+
+-   **rain_mm**: Highly significantly positive (more rainfall -\> more overflow events).
+-   **impervious_pct**: Significantly positive (more impervious land -\> more overflow events).
+-   **combined_sewer**: Catchments with combined sewers have significantly higher expected overflow counts.
+-   **maintenance_overdue**: Overdue maintenance increases expected overflows.
+
+**Non-significant predictors:**
+
+-   **green_infra_index**
+-   **upstream_construction**
+-   **catchment_type**
+
+```{r, echo=FALSE}
+ggpairs(df, columns = c(2,3,8))
+```
+
+```{r, echo=FALSE}
+# Overflow Events by Catchment Type with corresponding Rain_mm
+ggplot(df, aes(x = overflow_events, y = catchment_type, fill = rain_mm)) +
+  geom_tile()
+```
+
+There appears to be more overflow events when there was higher amounts of rain. The amount of overflow events seems to be somewhat evenly distributed amongst the catchment types.
+
+```{r, echo=FALSE}
+# Count of Impervious Pct per Catchment Type
+ggplot(df, aes(x = impervious_pct)) +
+  geom_histogram(binwidth = 5) +
+  facet_grid(~catchment_type)
+```
+
+There appears to be more data for residential catchment type. The distribution of count of impervious percentage per each catchment type appears to be pretty similar.
+
+```{r, echo=FALSE}
+# Distribution of green_infra_index per Catchment Type, Colored by Maintenance Overdue
+df$maintenance_overdue <- as.factor(df$maintenance_overdue)
+ggplot(df, aes(x = catchment_type, y = green_infra_index, fill = maintenance_overdue)) +
+  geom_violin()
+```
+
+There appears to be a moderately even distribution of green infra index scores per each catchment type, with the distribution for each one being pretty similar regardless of maintenance overdue.
+
+```{r, echo=FALSE}
+# Count of Upstream Construction by Combined Sewer
+df$upstream_construction <- as.factor(df$upstream_construction)
+ggplot(df, aes(x = combined_sewer, fill = upstream_construction)) +
+  geom_bar(position = "dodge")
+```
+
+There appears to be less upstream construction overall, with a higher amount of no upstream construction if it is not a combined sewer.
+
+```{r, echo=FALSE}
+# Overflow events by Rain_mm, colored by Combined Sewer and Upstream Construction, by Maintenance Overdue
+ggplot(df, aes(x = rain_mm, y = overflow_events, color = combined_sewer == 1 & upstream_construction == 1)) +
+  geom_point() +
+  facet_grid(~maintenance_overdue)
+```
+
+There appears to be a higher amount of events where it was not a combined sewer and there was no upstream construction. There is a fairly even amount of this combination for there being and not being maintenance overdue. There appears to be a higher amount of events overall if there was maintenance overdue. Data seems spread evenly when there is less rain, but there is a high count of events when rain increases and maintenance is overdue. Outliers when this is true also do have a combined sewer and upstream construction.
+
+```{r, echo=FALSE}
+# Overflow events by Impervious_pct, colored by Rain_mm
+ggplot(df, aes(x = impervious_pct, y = overflow_events, fill = rain_mm)) +
+  geom_point(shape = 21, size = 3) + scale_fill_viridis_c()
+```
+
+Most of the data is between overflow count of 0 to 7. There is pretty even distribution of events per impervious percentage, except for a few outliers when it is 50%. Most of the rain amounts are low but the high overflow counts correspond with heavy rain.
+
+# Methodology
+
+```{r, echo=FALSE}
+# added after looking at residual plots for full model
+df <- df[-38, ]
+
+
+set.seed(9421)
+n <- nrow(df)
+training_index <- sample(1:n, size = 0.7*n)
+training_data <- df[training_index, ]
+testing_data <- df[-training_index, ]
+```
+
+**First Order Model**
+
+```{r}
+model_full <- glm.nb(overflow_events ~ ., data = training_data)
+summary(model_full)
+
+wald.test(Sigma = vcov(model_full), b = coef(model_full), Terms = 1:9)
+
+par(mfrow=c(2,2))
+
+plot(model_full)
+```
+
+**Model with Added Interactions**
+
+```{r}
+model_int <- glm.nb(overflow_events ~ rain_mm*impervious_pct + rain_mm*combined_sewer + maintenance_overdue + upstream_construction + catchment_type + green_infra_index, data = training_data)
+summary(model_int)
+
+par(mfrow=c(2,2))
+plot(model_int)
+```
+
+**Model With Quadratic + Interaction Terms**
+
+```{r}
+model_quad <- glm.nb(overflow_events ~ poly(rain_mm, 2) + rain_mm*impervious_pct + rain_mm*combined_sewer + maintenance_overdue + upstream_construction + catchment_type + green_infra_index, data = training_data)
+summary(model_quad)
+
+par(mfrow=c(2,2))
+plot(model_quad)
+```
+
+**Model with only Interactions**
+
+```{r}
+model_int_only <- glm.nb(overflow_events ~ rain_mm*impervious_pct + rain_mm*combined_sewer, data = training_data)
+summary(model_int_only)
+
+par(mfrow=c(2,2))
+plot(model_int_only)
+```
+
+**Reduced Model**
+
+```{r}
+model_reduced <- glm.nb(overflow_events ~ rain_mm + impervious_pct + combined_sewer, data = training_data)
+summary(model_reduced)
+
+
+par(mfrow=c(2,2))
+plot(model_reduced)
+```
+
+# Results
+
+**Final Model**
+
+```{r}
+# The final test model is a variation of the reduced model with the addition of maintenance_overdue variable.
+
+final_model <- glm.nb(
+  overflow_events ~ rain_mm + impervious_pct + combined_sewer +
+  maintenance_overdue, data = training_data )
+summary(final_model)
+
+par(mfrow=c(2,2))
+plot(final_model)
+```
+
+**AIC Test**
+
+```{r}
+# All models' AIC values are outputted for comparison
+AIC(model_full, model_int, model_quad, model_int_only, model_reduced, final_model)
+```
+
+**Likelihood Ratio Tests**
+
+```{r}
+
+# LRT for Full Model vs Full Model w/ Interaction Terms
+full_int <- lrtest(model_full, model_int)[2, "Pr(>Chisq)"]
+cat("Full vs Interactions:", full_int)
+
+# LRT for Full Model vs Full Model w/ Quadratic & Interaction Terms
+full_quad <- lrtest(model_full, model_quad)[2, "Pr(>Chisq)"]
+cat("\nFull vs Quadratic + Interactions:", full_quad)
+
+# LRT for Full Model vs Interaction Terms Only Model
+full_int_only <- lrtest(model_full, model_int_only)[2, "Pr(>Chisq)"]
+cat("\nFull vs Interactions Only:", full_int_only)
+
+# LRT for Full Model vs Reduced Model (w/o maintenance_overdue variable)
+full_reduced <- lrtest(model_full, model_reduced)[2, "$Pr(>Chisq)"]
+cat("\nFull vs Reduced:", full_reduced)
+
+# LRT for Interaction Terms Only Model vs Reduced Model (w/o maintenance_overdue variable)
+int_only_reduced <- lrtest(model_int_only, model_reduced)[2, "Pr(>Chisq)"]
+cat("\nInteractions Only vs Reduced:", int_only_reduced)
+
+# LRT for Final Model (Reduced Model w/ maintenance_overdue) vs Reduced Model (w/o maintenance_overdue)
+final_reduced <- lrtest(final_model, model_reduced)[2, "Pr(>Chisq)"]
+cat("\nFinal vs Reduced:", final_reduced)
+
+
+```
+
+**Testing Model**
+
+```{r}
+test_model <- glm.nb(
+  overflow_events ~ rain_mm + impervious_pct + combined_sewer +
+  maintenance_overdue, data = testing_data )
+
+summary(test_model)
+```
+
+```{r}
+# Checking dispersion in training/testing data
+
+cat("Training Dispersion:", var(training_data$overflow_events) / mean(training_data$overflow_events))
+cat("\nTesting Dispersion:", var(testing_data$overflow_events) / mean(testing_data$overflow_events))
+
+# ratio based off training data
+cat("\nTheta vs SE:", summary(final_model)$theta / summary(final_model)$SE)
+
+```
+
+-   Convergence error in model run on testing data is due to only slight overdispersion present. Testing data sample is also small, which contributed to the error. Model works well on training data.
+
+**Evaluating model**
+
+```{r}
+# obtaining predicted values
+pred_test <- predict(final_model, newdata = testing_data) 
+
+# calculating residual mean squared error
+RMSE <- sqrt(mean((testing_data$overflow_events - pred_test)^2))
+cat("RMSE:", RMSE)
+```
+
+```{r}
+# obtaining predicted values
+df_pred <- testing_data %>%
+  mutate(predicted = predict(test_model, type = "response"),
+         actual = overflow_events)
+
+# plot to compare actual vs predicted overflow events
+ggplot(df_pred, aes(x = actual, y = predicted)) +
+  geom_point() +
+  geom_abline(color = "red", linetype = "dashed") +
+  labs(title = "Predicted vs Actual Overflow Events",
+       x = "Predicted", y = "Observed",
+       caption = paste("RMSE =", round(RMSE, 2)))
+```
