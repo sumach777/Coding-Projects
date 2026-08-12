@@ -1,2 +1,3 @@
 Using R, analyzed flowering plant data among 4 species to discover statistically significant findings across 4 key metrics: germination counts, 8 count canopy height, days till flowering, and flowering length. Conducted exploratory data analysis, fitted regression models, used Likelihood Ratio Tests and ANOVA to find initial differences, and then ranked species across metrics using Tukey's Test as a multi-comparison test.
+
 Link to presentation of findings: https://docs.google.com/presentation/d/17k_StLfVg7Kj5q8DIfEWXZizaWjq6eOXioIW_EYydo0/edit?usp=sharing
