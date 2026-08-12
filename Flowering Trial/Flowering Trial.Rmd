@@ -1,0 +1,292 @@
+---
+title: "Flowering Trial"
+author: "Sumedha Chalasani"
+date: "2026-05-14"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r}
+library(tidyverse)
+library(MASS)
+library(readxl)
+library(emmeans)
+library(AER)
+```
+
+
+```{r}
+sheet_names <- excel_sheets("flowering trial - Stats data.xlsx")
+
+list_of_sheets <- lapply(sheet_names, function(x) read_excel("flowering trial - Stats data.xlsx", sheet = x))
+
+names(list_of_sheets) <- sheet_names
+
+```
+
+```{r}
+germination <- list_of_sheets$Germination %>% 
+  slice(-1)
+colnames(germination) <- germination[1, ]
+germination <- germination[-1, ]
+
+height <- list_of_sheets$Height %>%
+  slice(-1)
+colnames(height) <- height[1, ]
+height <- height[-1, ]
+
+flowering <- list_of_sheets$Flowering %>%
+  slice(-2)
+colnames(flowering) <- flowering[2, ]
+flowering <- flowering[-2, ]
+flowering <- flowering[-1, ]
+```
+
+# Plant Count
+
+```{r}
+germination$`Plant count` <- as.numeric(germination$`Plant count`)
+germination$Sp <- as.factor(germination$Sp)
+mean(germination$`Plant count`)
+var(germination$`Plant count`)
+```
+Variance of the response variable plant count is greater than the mean.
+
+```{r}
+ggplot(data = germination, aes(x = Sp, y = `Plant count`, fill = Date)) +
+  geom_boxplot()
+```
+The spread of plant counts ranges from around 100 to 430. 
+
+All counts of plants given are unique, except for 355. There appears to be a fairly equal amount of plants planted on both dates. 
+
+The outlier 355 is for species AL. AL also seems to be the species with the highest plant counts, with descending order then being PH, POP, and BW.
+
+
+```{r}
+par(mfrow = c(2,2))
+germination$`Plant count` <- as.numeric(germination$`Plant count`)
+poisson <- glm(germination$`Plant count` ~ Sp * Date, 
+                   data = germination, 
+                   family = "poisson")
+plot(poisson)
+
+dispersiontest(poisson)
+```
+
+Model assumptions are not satisfied and show clear over dispersion. Since the p value is less than alpha 0.05 for the dispersion test, there is sufficient evidence that there is over dispersion within the response variable. Therefore, a negative binomial model must be fit.
+
+```{r}
+par(mfrow = c(2,2))
+nb_model <- glm.nb(germination$`Plant count` ~ Sp * Date, data = germination)
+summary(nb_model)
+plot(nb_model)
+```
+Model assumptions are not satisfied, as the Q-Q residuals are not linear. Interaction terms seem to be non-significant, so we will fit the reduced model without it to see if it will satisfy assumptions.
+
+```{r}
+par(mfrow = c(2,2))
+nb_model_reduced <- glm.nb(germination$`Plant count` ~ Sp + Date, data = germination)
+summary(nb_model_reduced)
+plot(nb_model_reduced)
+```
+```{r}
+anova(nb_model, nb_model_reduced, test = "Chisq")
+```
+
+The Likelihood Ratio Test proves that interaction is not significant, so it should be dropped. However, model assumptions are not satisfied, as again the Q-Q residuals are not linear. Date also is not significant, so we will remove it to see if the model without it satisfies assumptions.
+
+```{r}
+par(mfrow = c(2,2))
+nb_model_final <- glm.nb(`Plant count` ~ Sp, data = germination)
+summary(nb_model_final)
+plot(nb_model_final)
+```
+
+```{r}
+anova(nb_model_reduced, nb_model_final, test = "Chisq")
+```
+
+Model assumptions are satisfied. The Likelihood Ratio Test also proves that Date is not significant, so it should be dropped. The AIC value is lower than the initially fitted model, so we will keep this as the final model as it is the most parsimonious and best fits the data. The standard error is low and reasonable considering the spread of the response variable. From this model, we can infer that Species is the best variable to predict seven week germination counts. We can also infer that BW, PH, and POP all have a negative impact on counts compared to the species AL.
+
+```{r}
+emmeans(nb_model_final, pairwise ~ Sp, adjust = "tukey")
+```
+All species are significantly different. This also supports the previous inference, as AL is the species that has the highest average plant count, with the next being PH, POP, and BW in order.
+
+
+# Height
+
+```{r}
+height$`1` <- as.numeric(height$`1`)
+height <- height %>% 
+  mutate(avg_height = rowMeans(across(4:11), na.rm = TRUE))
+
+ggplot(height, aes(x = factor(Sp), avg_height, fill = Sowing)) +
+  geom_boxplot()
+```
+The median avg height is pretty spread out across species, with AL having the lowest at ~20 and PH having the highest at ~50. AL also has the lowest variability and PH has the highest. The spread of avg height is similar across both dates for all species except PH.
+
+Date 1 has a slightly higher median avg height overall compared with Date 2, but the gap is less than 5. Date 1's outliers on the higher end of avg height seem to be greater than Date 2's.
+
+```{r}
+par(mfrow = c(2,2))
+
+lr_model <- lm(avg_height ~ factor(Sp) * Sowing, data = height)
+summary(lr_model)
+anova(lr_model)
+plot(lr_model)
+```
+
+Model assumptions are satisfied. From the Anova output, we can see that all variables are significant, which means we cannot interpret the main effects alone without interaction. The r squared value is 0.8 which is fairly high, indicating a good fit.
+
+```{r}
+tukey1 <- TukeyHSD(aov(avg_height ~ factor(Sp) * Sowing, data = height))
+tukey1
+```
+
+
+```{r}
+interaction_results1 <- as.data.frame(tukey1$`factor(Sp):Sowing`)
+interaction_results1$comparison1 <- rownames(interaction_results1)
+
+sig_interactions1 <- interaction_results1[interaction_results1$`p adj` < 0.05, ]
+
+sig_interactions1 %>%
+  dplyr::select(diff, `p adj`) %>%
+  arrange(desc(abs(diff)))
+
+height %>%
+  group_by(Sp, Sowing) %>%
+  mutate(mean = mean(avg_height)) %>%
+  arrange(desc(mean)) %>%
+  dplyr::select(Sowing, Sp, mean)
+```
+
+After doing Tukey's Test and selecting the significantly different pairs, I ordered them by the biggest difference in magnitude. After comparing with means of plant count for each species/date pair, the final ranking from highest average plant count to lowest is PH 1, BW 2/BW 1/POP 2/PH 2/POP 1 (no difference), AL 1, AL 2.
+
+```{r}
+emm_height_sp <- emmeans(lr_model, ~ Sp | Sowing)
+pairs(emm_height_sp, adjust = "tukey")
+
+emm_height_sow <- emmeans(lr_model, ~ Sowing | Sp)
+pairs(emm_height_sow, adjust = "tukey") 
+```
+# Days Till Flowering
+
+
+```{r}
+names(flowering) <- make.unique(names(flowering))
+flowering$Sp <- as.factor(flowering$Sp)
+flowering$`Sowing date` <- as.factor(flowering$`Sowing date`)
+flowering$`Days til flowering` <- as.numeric(flowering$`Days til flowering`)
+flowering$`Length of flowering` <- as.numeric(flowering$`Length of flowering`)
+ggplot(data = flowering, aes(x = Sp, y = `Days til flowering`, fill = `Sowing date`)) +
+  geom_boxplot()
+```
+Date 1 appears to have higher days til flowering compared to Date 2. In order from highest to lowest days, it appears to be PH, POP, BW, and AL.
+
+
+```{r}
+par(mfrow = c(2,2))
+days_flower <- lm(`Days til flowering` ~ Sp * `Sowing date`, data = flowering)
+summary(days_flower)
+anova(days_flower)
+plot(days_flower)
+```
+Model assumptions are not fully satisfied but there are only mild departures from normality in the tails. Since we have a balanced design and ANOVA is robust, the results will be considered reliable. Significant results are trustworthy because the effect sizes are large relative to the within-group noise, since the F values are large for both Species and Sowing date.
+
+From the Anova output, we can see that all variables are significant, which means we cannot interpret the main effects alone without interaction. The r squared value is 0.98 which is very high, indicating a very good fit.
+
+```{r}
+tukey2 <- TukeyHSD(aov(`Days til flowering` ~ factor(Sp) * factor(`Sowing date`),
+                            data = flowering))
+tukey2
+```
+
+```{r}
+interaction_results2 <- as.data.frame(tukey2[[3]])
+interaction_results2$comparison2 <- rownames(interaction_results2)
+
+sig_interactions2 <- interaction_results2[interaction_results2$`p adj` < 0.05, ]
+
+sig_interactions2 %>%
+  dplyr::select(diff, `p adj`) %>%
+  arrange(desc(abs(diff)))
+
+flowering %>%
+  group_by(Sp, `Sowing date`) %>%
+  mutate(mean = mean(`Days til flowering`)) %>%
+  arrange(desc(mean)) %>%
+  dplyr::select(`Sowing date`, Sp, mean)
+```
+After doing Tukey's Test and selecting the significantly different pairs, I ordered them by the biggest difference in magnitude. After comparing with means of days till flowering for each species/date pair, the final ranking from highest average days to lowest is PH 1/POP 1 (no difference), PH 2, POP 2, BW 1/AL 1, AL 2/BW 2 (no difference).
+
+```{r}
+emm_days_sp <- emmeans(days_flower, ~ Sp | `Sowing date`)
+pairs(emm_days_sp, adjust = "tukey")
+
+emm_days_sow <- emmeans(days_flower, ~ `Sowing date` | Sp)
+pairs(emm_days_sow, adjust = "tukey")
+```
+
+# Length of Flowering
+
+```{r}
+ggplot(data = flowering, aes(x = Sp, y = `Length of flowering`, fill = `Sowing date`)) +
+  geom_boxplot()
+```
+Date 1 appears to have higher length of flowering as well, compared to Date 2. POP appears to be the species with highest length, with next being AL, BW, and PH in order.
+
+
+```{r}
+par(mfrow = c(2,2))
+flowering <- flowering[-16, ]
+length_flower <- lm(`Length of flowering` ~ Sp * `Sowing date`, data = flowering)
+summary(length_flower)
+anova(length_flower)
+plot(length_flower)
+```
+Residual plots were inspected with all observations included, but an outlier, observation 16, was severely skewing the plots and causing the assumptions to be violated. Model assumptions are satisfied after taking the outlier out of the data. From the Anova output, we can see that all variables are significant, which means we cannot interpret the main effects alone without interaction. Though not all individual interaction contrasts are significant, the overall interaction effect is significant. The r squared value is 0.98 which is very high, indicating a very good fit.
+
+```{r}
+tukey3 <- TukeyHSD(aov(`Length of flowering` ~ factor(Sp) * factor(`Sowing date`), data = flowering))
+tukey3
+```
+
+```{r}
+interaction_results3 <- as.data.frame(tukey3[[3]])
+interaction_results3$comparison3 <- rownames(interaction_results3)
+
+sig_interactions3 <- interaction_results3[interaction_results3$`p adj` < 0.05, ]
+
+sig_interactions3 %>%
+  dplyr::select(diff, `p adj`) %>%
+  arrange(desc(abs(diff)))
+
+flowering %>%
+  group_by(Sp, `Sowing date`) %>%
+  mutate(mean = mean(`Length of flowering`)) %>%
+  arrange(desc(mean)) %>%
+  dplyr::select(`Sowing date`, Sp, mean)
+```
+
+After doing Tukey's Test and selecting the significantly different pairs, I ordered them by the biggest difference in magnitude. After comparing with means of length of flowering for each species/date pair, the final ranking from highest average length to lowest is POP 1, POP 2, AL 1, AL 2/BW 2/BW 1 (no difference), PH 1, PH 2.
+
+```{r}
+emm_length_sp <- emmeans(length_flower, ~ Sp | `Sowing date`)
+pairs(emm_length_sp, adjust = "tukey")
+
+emm_length_sow <- emmeans(length_flower, ~ `Sowing date` | Sp)
+pairs(emm_length_sow, adjust = "tukey")
+```
+
+
+
+
+
+
+
+
+
